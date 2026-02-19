@@ -429,7 +429,18 @@
       }
     });
 
-    // -- Iframe error handling --
+    // -- Iframe load / error handling --
+
+    viewer.addEventListener('load', () => {
+      // Ignore the initial about:blank load — only signal for real pages
+      if (!viewer.src || viewer.src === 'about:blank') return;
+      // Wait a short tick for async renderers (Mermaid, D3, Chart.js) to finish
+      setTimeout(() => {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'render-complete' }));
+        }
+      }, 500);
+    });
 
     viewer.addEventListener('error', () => {
       showError('Failed to load visualization');

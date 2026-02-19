@@ -181,14 +181,27 @@ export async function show(projectDir, { openBrowser = true } = {}) {
     // Non-fatal
   }
 
-  return { port, isNew };
+  // 8. Attempt screenshot capture
+  let screenshot = null;
+  try {
+    const { captureScreenshot } = await import("../utils/screenshot.js");
+    const outputFile = resolve(pagesDir(projectDir), `screenshot-${Date.now()}.png`);
+    screenshot = await captureScreenshot(port, outputFile);
+  } catch {
+    // Non-fatal — screenshot is a bonus
+  }
+
+  return { port, isNew, screenshot };
 }
 
 export default async function showCommand() {
   try {
     const projectDir = getProjectDir();
-    const { port } = await show(projectDir);
+    const { port, screenshot } = await show(projectDir);
     console.log(`chat-glass running on http://localhost:${port}`);
+    if (screenshot) {
+      console.log(`screenshot: ${screenshot}`);
+    }
   } catch (err) {
     if (err.message.includes("No free port")) {
       console.error(

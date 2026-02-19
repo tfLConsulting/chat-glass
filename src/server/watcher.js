@@ -8,7 +8,9 @@ export function createWatcher(projectDir, onChange) {
 
   function start() {
     try {
-      watcher = watch(dir, { persistent: false }, (_event, _filename) => {
+      watcher = watch(dir, { persistent: false }, (_event, filename) => {
+        // Only react to HTML file changes — ignore screenshots, temp files, etc.
+        if (filename && !filename.endsWith(".html")) return;
         if (debounceTimer) clearTimeout(debounceTimer);
         debounceTimer = setTimeout(() => {
           debounceTimer = null;

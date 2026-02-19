@@ -32,6 +32,23 @@ export async function startServer(projectDir) {
     }
   }
 
+  // -- Render-complete signal --
+  let renderCompleteResolve = null;
+
+  function waitForRenderComplete(timeoutMs = 5000) {
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        renderCompleteResolve = null;
+        resolve();
+      }, timeoutMs);
+      renderCompleteResolve = () => {
+        clearTimeout(timer);
+        renderCompleteResolve = null;
+        resolve();
+      };
+    });
+  }
+
   // -- HTTP server --
   const router = createRouter(projectDir, {
     broadcast,
@@ -47,6 +64,16 @@ export async function startServer(projectDir) {
   wss.on("connection", (ws) => {
     clients.add(ws);
     touchActivity();
+    ws.on("message", (data) => {
+      try {
+        const msg = JSON.parse(data.toString());
+        if (msg.type === "render-complete" && renderCompleteResolve) {
+          renderCompleteResolve();
+        }
+      } catch {
+        // ignore malformed messages
+      }
+    });
     ws.on("close", () => clients.delete(ws));
     ws.on("error", () => clients.delete(ws));
   });
@@ -101,5 +128,5 @@ export async function startServer(projectDir) {
     }
   }
 
-  return { port, close };
+  return { port, close, waitForRenderComplete };
 }
