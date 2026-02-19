@@ -2,3 +2,4 @@ node_modules/
 .chat-glass/
 .DS_Store
 coverage/
+.claude/settings.local.json
