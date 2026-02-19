@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>chat-glass - gallery</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      min-height: 100%;
+      background: #1a1a2e;
+      color: #e0e0e0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+
+    /* Header */
+    #header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 24px;
+      background: #0f0f23;
+      border-bottom: 1px solid #2a2a4a;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    #header .brand {
+      font-size: 14px;
+      font-weight: 700;
+      color: #00d4ff;
+      letter-spacing: 0.5px;
+      text-decoration: none;
+    }
+
+    #header .brand:hover {
+      color: #33dfff;
+    }
+
+    #header .separator {
+      width: 1px;
+      height: 16px;
+      background: #2a2a4a;
+    }
+
+    #header .view-title {
+      font-size: 14px;
+      color: #888;
+    }
+
+    #header .count {
+      font-size: 12px;
+      color: #555;
+      margin-left: auto;
+    }
+
+    #ws-indicator {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #00d4ff;
+      flex-shrink: 0;
+      transition: background 0.3s;
+    }
+
+    #ws-indicator.disconnected {
+      background: #ff4444;
+    }
+
+    /* Grid */
+    #grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 16px;
+      padding: 24px;
+    }
+
+    .card {
+      background: #16213e;
+      border: 1px solid #2a2a4a;
+      border-radius: 8px;
+      padding: 20px;
+      cursor: pointer;
+      transition: border-color 0.15s, transform 0.15s, box-shadow 0.15s;
+      text-decoration: none;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .card:hover {
+      border-color: #00d4ff;
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(0, 212, 255, 0.1);
+    }
+
+    .card .card-title {
+      font-size: 14px;
+      color: #e0e0e0;
+      line-height: 1.4;
+      word-break: break-word;
+    }
+
+    .card:hover .card-title {
+      color: #00d4ff;
+    }
+
+    .card .card-time {
+      font-size: 11px;
+      color: #666;
+    }
+
+    .card .card-filename {
+      font-size: 10px;
+      color: #444;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    /* Empty state */
+    #empty-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 80px 24px;
+      gap: 16px;
+      color: #888;
+    }
+
+    #empty-state .icon {
+      font-size: 48px;
+      opacity: 0.3;
+    }
+
+    #empty-state .message {
+      font-size: 16px;
+    }
+
+    #empty-state .hint {
+      font-size: 12px;
+      color: #555;
+    }
+
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <div id="header">
+    <a class="brand" href="/">chat-glass</a>
+    <span class="separator"></span>
+    <span class="view-title">Gallery</span>
+    <span class="count" id="page-count"></span>
+    <div id="ws-indicator" title="WebSocket connected"></div>
+  </div>
+
+  <div id="grid"></div>
+
+  <div id="empty-state" class="hidden">
+    <div class="icon">&#9672;</div>
+    <div class="message">Waiting for Claude to create a visualization...</div>
+    <div class="hint">Use chat-glass show &lt;file.html&gt; to display content</div>
+  </div>
+
+  <script>
+    const grid = document.getElementById('grid');
+    const emptyState = document.getElementById('empty-state');
+    const pageCount = document.getElementById('page-count');
+    const wsIndicator = document.getElementById('ws-indicator');
+
+    function formatTimestamp(ts) {
+      if (!ts) return '';
+      const cleaned = ts.replace(/T/, ' ').replace(/-(\d{2})-(\d{2})-(\d+)$/, ':$1:$2');
+      return cleaned;
+    }
+
+    function renderGrid(pages) {
+      if (pages.length === 0) {
+        grid.innerHTML = '';
+        emptyState.classList.remove('hidden');
+        pageCount.textContent = '';
+        return;
+      }
+
+      emptyState.classList.add('hidden');
+      pageCount.textContent = pages.length + ' visualization' + (pages.length !== 1 ? 's' : '');
+
+      grid.innerHTML = pages.map(page => {
+        const title = page.title || page.filename;
+        const time = formatTimestamp(page.timestamp);
+        const href = '/?page=' + encodeURIComponent(page.filename);
+        return `<a class="card" href="${href}">
+          <div class="card-title">${escapeHtml(title)}</div>
+          <div class="card-time">${escapeHtml(time)}</div>
+          <div class="card-filename">${escapeHtml(page.filename)}</div>
+        </a>`;
+      }).join('');
+    }
+
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+
+    async function loadPages() {
+      try {
+        const res = await fetch('/api/pages');
+        if (!res.ok) throw new Error('Failed to fetch');
+        const pages = await res.json();
+        renderGrid(pages);
+      } catch {
+        renderGrid([]);
+      }
+    }
+
+    // -- Keyboard shortcut --
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'g' || e.key === 'G') {
+        window.location.href = '/';
+      }
+      if (e.key === 'Escape') {
+        window.location.href = '/';
+      }
+    });
+
+    // -- WebSocket with auto-reconnect --
+    let ws = null;
+    let wsReconnectDelay = 500;
+    const WS_MAX_DELAY = 10000;
+
+    function connectWebSocket() {
+      const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      ws = new WebSocket(`${protocol}//${location.host}/ws`);
+
+      ws.onopen = () => {
+        wsReconnectDelay = 500;
+        wsIndicator.classList.remove('disconnected');
+        wsIndicator.title = 'WebSocket connected';
+      };
+
+      ws.onmessage = (e) => {
+        try {
+          const msg = JSON.parse(e.data);
+          if (msg.type === 'reload') loadPages();
+        } catch {}
+      };
+
+      ws.onclose = () => {
+        wsIndicator.classList.add('disconnected');
+        wsIndicator.title = 'WebSocket disconnected - reconnecting...';
+        scheduleReconnect();
+      };
+
+      ws.onerror = () => {};
+    }
+
+    function scheduleReconnect() {
+      setTimeout(() => {
+        connectWebSocket();
+        wsReconnectDelay = Math.min(wsReconnectDelay * 2, WS_MAX_DELAY);
+      }, wsReconnectDelay);
+    }
+
+    // -- Boot --
+    connectWebSocket();
+    loadPages();
+  </script>
+</body>
+</html>

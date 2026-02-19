@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>chat-glass</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      height: 100%;
+      overflow: hidden;
+      background: #1a1a2e;
+      color: #e0e0e0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+
+    #app {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+
+    /* Title bar */
+    #title-bar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 8px 16px;
+      background: #0f0f23;
+      border-bottom: 1px solid #2a2a4a;
+      flex-shrink: 0;
+      min-height: 40px;
+    }
+
+    #title-bar .brand {
+      font-size: 13px;
+      font-weight: 700;
+      color: #00d4ff;
+      letter-spacing: 0.5px;
+      white-space: nowrap;
+    }
+
+    #title-bar .separator {
+      width: 1px;
+      height: 16px;
+      background: #2a2a4a;
+      flex-shrink: 0;
+    }
+
+    #title-bar .page-title {
+      font-size: 13px;
+      color: #e0e0e0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      flex: 1;
+      min-width: 0;
+    }
+
+    #title-bar .timestamp {
+      font-size: 11px;
+      color: #888;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    #ws-indicator {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #00d4ff;
+      flex-shrink: 0;
+      transition: background 0.3s;
+    }
+
+    #ws-indicator.disconnected {
+      background: #ff4444;
+    }
+
+    /* Content area */
+    #content {
+      flex: 1;
+      position: relative;
+      min-height: 0;
+    }
+
+    #viewer {
+      width: 100%;
+      height: 100%;
+      border: none;
+      display: block;
+      background: #1a1a2e;
+    }
+
+    /* Empty state */
+    #empty-state {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      color: #888;
+    }
+
+    #empty-state .icon {
+      font-size: 48px;
+      opacity: 0.3;
+    }
+
+    #empty-state .message {
+      font-size: 16px;
+    }
+
+    #empty-state .hint {
+      font-size: 12px;
+      color: #555;
+    }
+
+    /* Error state */
+    #error-state {
+      position: absolute;
+      inset: 0;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      color: #ff6b6b;
+    }
+
+    #error-state .message {
+      font-size: 14px;
+    }
+
+    /* Gallery strip */
+    #gallery-strip {
+      display: flex;
+      align-items: stretch;
+      gap: 0;
+      background: #16213e;
+      border-top: 1px solid #2a2a4a;
+      flex-shrink: 0;
+      overflow-x: auto;
+      overflow-y: hidden;
+      scrollbar-width: thin;
+      scrollbar-color: #2a2a4a #16213e;
+    }
+
+    #gallery-strip::-webkit-scrollbar {
+      height: 4px;
+    }
+
+    #gallery-strip::-webkit-scrollbar-track {
+      background: #16213e;
+    }
+
+    #gallery-strip::-webkit-scrollbar-thumb {
+      background: #2a2a4a;
+      border-radius: 2px;
+    }
+
+    .gallery-item {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 8px 16px;
+      min-width: 160px;
+      max-width: 240px;
+      cursor: pointer;
+      border-top: 2px solid transparent;
+      transition: background 0.15s, border-color 0.15s;
+      flex-shrink: 0;
+      user-select: none;
+    }
+
+    .gallery-item:hover {
+      background: #1a2744;
+    }
+
+    .gallery-item.active {
+      border-top-color: #00d4ff;
+      background: #1a2744;
+    }
+
+    .gallery-item .item-title {
+      font-size: 12px;
+      color: #e0e0e0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      line-height: 1.4;
+    }
+
+    .gallery-item.active .item-title {
+      color: #00d4ff;
+    }
+
+    .gallery-item .item-time {
+      font-size: 10px;
+      color: #666;
+      line-height: 1.4;
+    }
+
+    /* Hidden utility */
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div id="title-bar">
+      <span class="brand">chat-glass</span>
+      <span class="separator"></span>
+      <span class="page-title" id="current-title">Loading...</span>
+      <span class="timestamp" id="current-timestamp"></span>
+      <div id="ws-indicator" title="WebSocket connected"></div>
+    </div>
+
+    <div id="content">
+      <iframe id="viewer" class="hidden" sandbox="allow-scripts allow-same-origin"></iframe>
+      <div id="empty-state">
+        <div class="icon">&#9672;</div>
+        <div class="message">Waiting for Claude to create a visualization...</div>
+        <div class="hint">Use chat-glass show &lt;file.html&gt; to display content</div>
+      </div>
+      <div id="error-state">
+        <div class="message" id="error-message">Failed to load visualization</div>
+      </div>
+    </div>
+
+    <div id="gallery-strip"></div>
+  </div>
+
+  <script>
+    const viewer = document.getElementById('viewer');
+    const emptyState = document.getElementById('empty-state');
+    const errorState = document.getElementById('error-state');
+    const errorMessage = document.getElementById('error-message');
+    const titleEl = document.getElementById('current-title');
+    const timestampEl = document.getElementById('current-timestamp');
+    const galleryStrip = document.getElementById('gallery-strip');
+    const wsIndicator = document.getElementById('ws-indicator');
+
+    let pages = [];
+    let currentIndex = -1;
+
+    // -- Page loading --
+
+    function formatTimestamp(ts) {
+      if (!ts) return '';
+      // ts is like "2026-02-18T14-30-00-123" — parse into readable form
+      const cleaned = ts.replace(/T/, ' ').replace(/-(\d{2})-(\d{2})-(\d+)$/, ':$1:$2');
+      return cleaned;
+    }
+
+    function loadPage(index) {
+      if (pages.length === 0) {
+        showEmpty();
+        return;
+      }
+      if (index < 0 || index >= pages.length) return;
+
+      currentIndex = index;
+      const page = pages[index];
+
+      // Update title bar
+      titleEl.textContent = page.title || page.filename;
+      timestampEl.textContent = formatTimestamp(page.timestamp);
+
+      // Update iframe
+      emptyState.classList.add('hidden');
+      errorState.style.display = 'none';
+      viewer.classList.remove('hidden');
+      viewer.src = '/pages/' + encodeURIComponent(page.filename);
+
+      // Update gallery strip highlights
+      updateGalleryHighlight();
+
+      // Scroll active item into view
+      const activeItem = galleryStrip.querySelector('.gallery-item.active');
+      if (activeItem) {
+        activeItem.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+      }
+
+      // Update URL without reload
+      const url = new URL(window.location);
+      url.searchParams.set('page', page.filename);
+      history.replaceState(null, '', url);
+    }
+
+    function showEmpty() {
+      currentIndex = -1;
+      viewer.classList.add('hidden');
+      errorState.style.display = 'none';
+      emptyState.classList.remove('hidden');
+      titleEl.textContent = 'No visualizations';
+      timestampEl.textContent = '';
+      galleryStrip.innerHTML = '';
+    }
+
+    function showError(msg) {
+      viewer.classList.add('hidden');
+      emptyState.classList.add('hidden');
+      errorState.style.display = 'flex';
+      errorMessage.textContent = msg;
+    }
+
+    // -- Gallery strip --
+
+    function renderGalleryStrip() {
+      galleryStrip.innerHTML = '';
+
+      // Pages are sorted newest-first from API, but strip shows most recent on the right
+      // So we reverse for display
+      const displayOrder = [...pages].reverse();
+
+      displayOrder.forEach((page, displayIdx) => {
+        const realIndex = pages.length - 1 - displayIdx;
+        const item = document.createElement('div');
+        item.className = 'gallery-item';
+        item.dataset.index = realIndex;
+        if (realIndex === currentIndex) item.classList.add('active');
+
+        const titleSpan = document.createElement('div');
+        titleSpan.className = 'item-title';
+        titleSpan.textContent = page.title || page.filename;
+
+        const timeSpan = document.createElement('div');
+        timeSpan.className = 'item-time';
+        timeSpan.textContent = formatTimestamp(page.timestamp);
+
+        item.appendChild(titleSpan);
+        item.appendChild(timeSpan);
+
+        item.addEventListener('click', () => loadPage(realIndex));
+        galleryStrip.appendChild(item);
+      });
+    }
+
+    function updateGalleryHighlight() {
+      galleryStrip.querySelectorAll('.gallery-item').forEach(item => {
+        const idx = parseInt(item.dataset.index, 10);
+        item.classList.toggle('active', idx === currentIndex);
+      });
+    }
+
+    // -- Data fetching --
+
+    async function fetchPages() {
+      try {
+        const res = await fetch('/api/pages');
+        if (!res.ok) throw new Error('Failed to fetch pages');
+        pages = await res.json();
+      } catch {
+        pages = [];
+      }
+    }
+
+    async function init() {
+      await fetchPages();
+
+      if (pages.length === 0) {
+        showEmpty();
+        return;
+      }
+
+      renderGalleryStrip();
+
+      // Check for ?page= query param
+      const params = new URLSearchParams(window.location.search);
+      const requestedPage = params.get('page');
+
+      if (requestedPage) {
+        const idx = pages.findIndex(p => p.filename === requestedPage);
+        if (idx !== -1) {
+          loadPage(idx);
+          return;
+        }
+      }
+
+      // Default: load the latest (index 0 since sorted newest-first)
+      loadPage(0);
+    }
+
+    async function onReload() {
+      const previousFilename = currentIndex >= 0 ? pages[currentIndex]?.filename : null;
+      await fetchPages();
+
+      if (pages.length === 0) {
+        showEmpty();
+        return;
+      }
+
+      renderGalleryStrip();
+
+      // Load the newest page (a reload means new content arrived)
+      loadPage(0);
+    }
+
+    // -- Keyboard navigation --
+
+    document.addEventListener('keydown', (e) => {
+      // Don't capture if user is typing in an input
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+      switch (e.key) {
+        case 'ArrowLeft':
+          e.preventDefault();
+          if (currentIndex < pages.length - 1) loadPage(currentIndex + 1);
+          break;
+        case 'ArrowRight':
+          e.preventDefault();
+          if (currentIndex > 0) loadPage(currentIndex - 1);
+          break;
+        case 'Home':
+          e.preventDefault();
+          if (pages.length > 0) loadPage(pages.length - 1);
+          break;
+        case 'End':
+          e.preventDefault();
+          if (pages.length > 0) loadPage(0);
+          break;
+        case 'g':
+        case 'G':
+          window.location.href = '/gallery';
+          break;
+      }
+    });
+
+    // -- Iframe error handling --
+
+    viewer.addEventListener('error', () => {
+      showError('Failed to load visualization');
+    });
+
+    // -- WebSocket with auto-reconnect --
+
+    let ws = null;
+    let wsReconnectDelay = 500;
+    const WS_MAX_DELAY = 10000;
+
+    function connectWebSocket() {
+      const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      ws = new WebSocket(`${protocol}//${location.host}/ws`);
+
+      ws.onopen = () => {
+        wsReconnectDelay = 500;
+        wsIndicator.classList.remove('disconnected');
+        wsIndicator.title = 'WebSocket connected';
+      };
+
+      ws.onmessage = (e) => {
+        try {
+          const msg = JSON.parse(e.data);
+          if (msg.type === 'reload') {
+            onReload();
+          }
+        } catch {
+          // ignore malformed messages
+        }
+      };
+
+      ws.onclose = () => {
+        wsIndicator.classList.add('disconnected');
+        wsIndicator.title = 'WebSocket disconnected - reconnecting...';
+        scheduleReconnect();
+      };
+
+      ws.onerror = () => {
+        // onclose will fire after this
+      };
+    }
+
+    function scheduleReconnect() {
+      setTimeout(() => {
+        connectWebSocket();
+        wsReconnectDelay = Math.min(wsReconnectDelay * 2, WS_MAX_DELAY);
+      }, wsReconnectDelay);
+    }
+
+    // -- Boot --
+
+    connectWebSocket();
+    init();
+  </script>
+</body>
+</html>
