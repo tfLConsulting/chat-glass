@@ -69,3 +69,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines.
 ## License
 
 [MIT](LICENSE)
+
+## NPM Package
+
+[![npm version](https://img.shields.io/npm/v/chat-glass.svg)](https://www.npmjs.com/package/chat-glass)
